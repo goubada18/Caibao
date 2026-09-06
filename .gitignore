@@ -112,3 +112,6 @@ Thumbs.db
 .env.*
 secrets.properties
 api_keys.properties
+
+# WorkBuddy 工作区数据
+.workbuddy/
