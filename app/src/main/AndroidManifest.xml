@@ -107,6 +107,20 @@
                 android:value="automation_overlay" />
         </service>
 
+        <!-- 菜包无障碍服务：感知通道 A（S1） -->
+        <service
+            android:name=".service.CaibaoA11yService"
+            android:exported="true"
+            android:label="菜包感知服务"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/caibao_a11y_config" />
+        </service>
+
     </application>
 
 </manifest>

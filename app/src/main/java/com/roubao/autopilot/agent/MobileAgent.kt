@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import com.roubao.autopilot.App
+import com.roubao.autopilot.controller.A11yPerception
 import com.roubao.autopilot.controller.AppScanner
 import com.roubao.autopilot.controller.DeviceController
 import com.roubao.autopilot.data.ExecutionStep
@@ -147,6 +148,13 @@ class MobileAgent(
             stop()
         }
 
+        // S1 感知通道 A：A11y 未启用时经 Shizuku 自启用（失败不阻塞，自动降级截图通道）
+        if (!A11yPerception.isAvailable) {
+            log("[A11y] 感知服务未启用，尝试经 Shizuku 自启用...")
+            val a11yOk = controller.enableA11yService()
+            log(if (a11yOk) "[A11y] 感知服务已启用 ✓" else "[A11y] 自启用失败，本次任务走截图通道")
+        }
+
         updateState { copy(isRunning = true, currentStep = 0, instruction = instruction) }
 
         try {
@@ -275,7 +283,14 @@ class MobileAgent(
                     return AgentResult(success = false, message = "用户停止")
                 }
 
-                val actionPrompt = executor.getPrompt(infoPool)
+                val actionPrompt = buildString {
+                    append(executor.getPrompt(infoPool))
+                    // S1 感知通道 A：注入 A11y 树快照（可点击元素清单），给 VLM 精确文本+像素坐标
+                    A11yPerception.compactTreeText()?.let { tree ->
+                        append("\n\n").append(tree)
+                        log("[A11y] 树快照已注入决策 prompt")
+                    }
+                }
 
                 // 使用上下文记忆调用 VLM
                 val memory = infoPool.executorMemory

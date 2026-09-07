@@ -12,6 +12,7 @@ import android.os.IBinder
 import android.os.Looper
 import com.roubao.autopilot.App
 import com.roubao.autopilot.IShellService
+import com.roubao.autopilot.service.CaibaoA11yService
 import com.roubao.autopilot.service.ShellService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -64,6 +65,29 @@ class DeviceController(private val context: Context? = null) {
             serviceBound = false
             println("[DeviceController] ShellService disconnected")
         }
+    }
+
+    /**
+     * 经 Shizuku shell 追加启用菜包无障碍服务（P1-1 实测：必须追加，不能覆盖）。
+     * 阻塞轮询最多 10s 等系统绑定。返回最终是否可用。
+     */
+    fun enableA11yService(): Boolean {
+        if (A11yPerception.isAvailable) return true
+        val cur = exec("settings get secure enabled_accessibility_services").trim()
+        val comp = CaibaoA11yService.COMPONENT
+        if (!cur.contains("CaibaoA11yService")) {
+            val newList = if (cur.isBlank() || cur == "null") comp else "$cur:$comp"
+            exec("settings put secure enabled_accessibility_services \"$newList\"")
+            println("[DeviceController] 已追加写入无障碍开关: $newList")
+        }
+        exec("settings put secure accessibility_enabled 1")
+        // 实测 HyperOS 绑定要 ~10.3s，轮询必须比它长
+        repeat(40) {
+            if (A11yPerception.isAvailable) return true
+            Thread.sleep(500)
+        }
+        println("[DeviceController] A11y 服务 20s 内未绑定")
+        return A11yPerception.isAvailable
     }
 
     /**
