@@ -1,5 +1,6 @@
 package com.roubao.autopilot.agent
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -108,12 +109,14 @@ data class Action(
                 val obj = JSONObject(json)
                 val type = obj.optString("action", "")
 
+                val coord = parseCoordinate(obj.optJSONArray("coordinate"))
+                val coord2 = parseCoordinate(obj.optJSONArray("coordinate2"))
                 Action(
                     type = type,
-                    x = obj.optJSONArray("coordinate")?.optInt(0),
-                    y = obj.optJSONArray("coordinate")?.optInt(1),
-                    x2 = obj.optJSONArray("coordinate2")?.optInt(0),
-                    y2 = obj.optJSONArray("coordinate2")?.optInt(1),
+                    x = coord?.first,
+                    y = coord?.second,
+                    x2 = coord2?.first,
+                    y2 = coord2?.second,
                     text = obj.optString("text", null),
                     button = obj.optString("button", null),
                     duration = if (obj.has("duration")) obj.optInt("duration", 3) else null,
@@ -124,6 +127,34 @@ data class Action(
                 )
             } catch (e: Exception) {
                 null
+            }
+        }
+
+        /**
+         * 解析 coordinate 字段，兼容三种格式:
+         * 1. 点: [x, y]                          -> (x, y)
+         * 2. 扁平 bbox: [x1, y1, x2, y2]          -> 中心点
+         * 3. 嵌套 bbox: [[x1, y1, x2, y2]] (GLM-4.1V 输出) -> 中心点
+         * 返回 null 表示字段缺失。
+         */
+        private fun parseCoordinate(arr: JSONArray?): Pair<Int, Int>? {
+            if (arr == null || arr.length() == 0) return null
+            val first = arr.opt(0)
+            return when {
+                first is JSONArray -> {
+                    // 嵌套 bbox
+                    if (first.length() >= 4)
+                        (first.optInt(0) + first.optInt(2)) / 2 to
+                                (first.optInt(1) + first.optInt(3)) / 2
+                    else first.optInt(0) to first.optInt(1)
+                }
+                arr.length() >= 4 ->
+                    // 扁平 bbox
+                    (arr.optInt(0) + arr.optInt(2)) / 2 to
+                            (arr.optInt(1) + arr.optInt(3)) / 2
+                else ->
+                    // 标准点
+                    arr.optInt(0) to arr.optInt(1)
             }
         }
 

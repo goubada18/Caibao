@@ -962,9 +962,14 @@ class MobileAgent(
 
         when (action.type) {
             "click" -> {
-                val x = mapCoordinate(action.x ?: 0, screenWidth)
-                val y = mapCoordinate(action.y ?: 0, screenHeight)
-                controller.tap(x, y)
+                if (action.x == null || action.y == null) {
+                    log("⚠️ click 缺少坐标（解析失败或模型未输出），跳过执行")
+                } else {
+                    val x = mapCoordinate(action.x, screenWidth)
+                    val y = mapCoordinate(action.y, screenHeight)
+                    log("click -> ($x, $y)")
+                    controller.tap(x, y)
+                }
             }
             "double_tap" -> {
                 val x = mapCoordinate(action.x ?: 0, screenWidth)
