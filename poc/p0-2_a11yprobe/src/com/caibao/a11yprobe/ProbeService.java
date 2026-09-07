@@ -38,6 +38,25 @@ public class ProbeService extends AccessibilityService {
     static volatile ProbeService instance;
 
     private long lastHeartbeatAt = 0;
+    private android.os.Handler handler;
+    private boolean timerOn = false;
+
+    private void startTimer() {
+        if (timerOn) return;
+        timerOn = true;
+        handler = new android.os.Handler(android.os.Looper.getMainLooper());
+        handler.postDelayed(new Runnable() {
+            @Override public void run() {
+                logHeartbeat("timer");
+                if (timerOn) handler.postDelayed(this, 10000);
+            }
+        }, 10000);
+    }
+
+    private void stopTimer() {
+        timerOn = false;
+        if (handler != null) handler.removeCallbacksAndMessages(null);
+    }
 
     // ---------- 日志（logcat + 私有文件双写） ----------
 
@@ -87,12 +106,14 @@ public class ProbeService extends AccessibilityService {
     protected void onServiceConnected() {
         instance = this;
         connected = true;
+        startTimer();
         fileLog("LIFECYCLE onServiceConnected flags=" + getServiceInfo().flags);
     }
 
     @Override
     public boolean onUnbind(Intent intent) {
         connected = false;
+        stopTimer();
         fileLog("LIFECYCLE onUnbind（系统解绑，事件流中断）");
         return super.onUnbind(intent);
     }
@@ -100,6 +121,7 @@ public class ProbeService extends AccessibilityService {
     @Override
     public void onDestroy() {
         connected = false;
+        stopTimer();
         fileLog("LIFECYCLE onDestroy（服务对象销毁）");
         instance = null;
         super.onDestroy();
@@ -126,8 +148,13 @@ public class ProbeService extends AccessibilityService {
         }
         long now = SystemClock.uptimeMillis();
         if (now - lastHeartbeatAt < 5000) return;
-        lastHeartbeatAt = now;
-        StringBuilder sb = new StringBuilder("HEARTBEAT pkg=").append(lastPkg)
+        logHeartbeat("event");
+    }
+
+    private void logHeartbeat(String src) {
+        lastHeartbeatAt = SystemClock.uptimeMillis();
+        StringBuilder sb = new StringBuilder("HEARTBEAT src=").append(src)
+                .append(" pkg=").append(lastPkg)
                 .append(" totalEvents=").append(eventCount);
         try {
             AccessibilityNodeInfo r = getRootInActiveWindow();

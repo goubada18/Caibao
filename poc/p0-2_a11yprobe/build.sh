@@ -37,10 +37,12 @@ echo "[5/6] 打包 classes.dex 进 APK"
 "C:/Users/93343/.workbuddy/binaries/python/versions/3.13.12/python.exe" - <<'EOF'
 import zipfile
 src = zipfile.ZipFile("build/base.apk")
-out = zipfile.ZipFile("build/unsigned.apk", "w", zipfile.ZIP_DEFLATED)
+out = zipfile.ZipFile("build/unsigned.apk", "w")
 for i in src.infolist():
-    out.writestr(i.filename, src.read(i.filename))
-out.write("build/classes.dex", "classes.dex")
+    # 保留原始 ZipInfo（压缩方式等）：resources.arsc 必须保持 STORED，
+    # 否则 targetSdk>=30 安装时报 requires resources.arsc stored uncompressed
+    out.writestr(i, src.read(i.filename))
+out.write("build/classes.dex", "classes.dex", zipfile.ZIP_DEFLATED)
 out.close()
 src.close()
 print("repack ok")
