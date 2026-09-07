@@ -55,6 +55,7 @@ class DeviceController(private val context: Context? = null) {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             shellService = IShellService.Stub.asInterface(service)
             serviceBound = true
+            SelfHeal.shellExec = { command -> exec(command) }
             println("[DeviceController] ShellService connected")
         }
 

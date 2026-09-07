@@ -165,11 +165,13 @@ class AppScanner(private val context: Context) {
         val cacheFile = File(context.filesDir, CACHE_FILE)
         if (cacheFile.exists()) {
             val loaded = loadFromFile(cacheFile)
-            if (loaded.isNotEmpty()) {
+            // 异常少的缓存 = 包可见性受限时期的脏数据，丢弃强制重扫
+            if (loaded.size >= 10) {
                 cachedApps = loaded
                 println("[AppScanner] 从文件加载 ${loaded.size} 个应用")
                 return loaded
             }
+            println("[AppScanner] 缓存仅 ${loaded.size} 个应用，视为脏数据，强制重扫")
         }
 
         return refreshApps()
@@ -195,6 +197,22 @@ class AppScanner(private val context: Context) {
      */
     private fun scanAllApps(): List<AppInfo> {
         val pm = context.packageManager
+        var apps = scanOnce(pm)
+
+        // 自愈：扫到的应用异常少 = QUERY_ALL_PACKAGES 被 HyperOS 隐私开关拒绝
+        if (apps.size < 10) {
+            println("[AppScanner] ⚠️ 仅扫到 ${apps.size} 个应用——包可见性受限，尝试 Shizuku 自愈")
+            if (SelfHeal.fixAppVisibility()) {
+                Thread.sleep(500)  // 等 appops 生效
+                apps = scanOnce(pm)
+                println("[AppScanner] 自愈后重扫: ${apps.size} 个应用")
+            }
+        }
+
+        return apps.sortedBy { it.appName }
+    }
+
+    private fun scanOnce(pm: PackageManager): MutableList<AppInfo> {
         val apps = mutableListOf<AppInfo>()
 
         try {
@@ -220,7 +238,7 @@ class AppScanner(private val context: Context) {
             e.printStackTrace()
         }
 
-        return apps.sortedBy { it.appName }
+        return apps
     }
 
     /**
