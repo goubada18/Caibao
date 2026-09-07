@@ -71,6 +71,7 @@ data class Action(
     val x2: Int? = null,
     val y2: Int? = null,
     val text: String? = null,
+    val texts: List<String>? = null,  // click_sequence: 批量点击的元素文本序列
     val button: String? = null,      // Back, Home, Enter, menu
     val duration: Int? = null,       // wait 动作的等待时长（秒）
     val message: String? = null,     // take_over/ask_user 动作的提示消息
@@ -111,6 +112,10 @@ data class Action(
 
                 val coord = parseCoordinate(obj.optJSONArray("coordinate"))
                 val coord2 = parseCoordinate(obj.optJSONArray("coordinate2"))
+                val textsArr = obj.optJSONArray("texts")
+                val texts = if (textsArr != null) (0 until textsArr.length())
+                    .mapNotNull { textsArr.optString(it).takeIf { s -> s.isNotEmpty() } }
+                    else null
                 Action(
                     type = type,
                     x = coord?.first,
@@ -118,6 +123,7 @@ data class Action(
                     x2 = coord2?.first,
                     y2 = coord2?.second,
                     text = obj.optString("text", null),
+                    texts = texts,
                     button = obj.optString("button", null),
                     duration = if (obj.has("duration")) obj.optInt("duration", 3) else null,
                     message = obj.optString("message", null),

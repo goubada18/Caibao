@@ -986,6 +986,41 @@ class MobileAgent(
                     controller.tap(x, y)
                 }
             }
+            "click_element" -> {
+                // S1 通道 A：A11y performAction，毫秒级且不受坐标缩放误差影响
+                val target = action.text
+                if (target.isNullOrBlank()) {
+                    log("⚠️ click_element 缺少 text")
+                } else if (A11yPerception.isAvailable && A11yPerception.clickByText(target)) {
+                    log("[通道A] click_element \"$target\" ✓")
+                } else {
+                    log("[通道A] click_element \"$target\" 未命中树，降级失败——本轮由反思观察")
+                }
+            }
+            "click_sequence" -> {
+                // S1 通道 A 批量执行：一次决策完成一串点击（计算器/拨号盘场景）
+                val seq = action.texts.orEmpty()
+                if (seq.isEmpty()) {
+                    log("⚠️ click_sequence 缺少 texts")
+                } else {
+                    var okCount = 0
+                    for (t in seq) {
+                        var ok = A11yPerception.isAvailable && A11yPerception.clickByText(t)
+                        if (!ok && A11yPerception.isAvailable) {
+                            Thread.sleep(150)  // 树可能因上一次点击而刷新，重试一次
+                            ok = A11yPerception.clickByText(t)
+                        }
+                        if (ok) {
+                            okCount++
+                            log("[通道A] sequence \"$t\" ✓ ($okCount/${seq.size})")
+                            Thread.sleep(150)  // 等 UI 响应
+                        } else {
+                            log("[通道A] sequence \"$t\" 未命中，中止序列 ($okCount/${seq.size})")
+                            break
+                        }
+                    }
+                }
+            }
             "double_tap" -> {
                 val x = mapCoordinate(action.x ?: 0, screenWidth)
                 val y = mapCoordinate(action.y ?: 0, screenHeight)

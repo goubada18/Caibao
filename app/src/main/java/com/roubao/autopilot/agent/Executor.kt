@@ -64,6 +64,8 @@ Text Related:
         if (infoPool.installedApps.isNotEmpty()) {
             append("  Available apps: ${infoPool.installedApps}\n")
         }
+        append("- click_element(text): [PREFERRED] Click the element whose text/desc matches in the [A11y element list]. Executed via accessibility in milliseconds, more accurate than coordinates! Example: {\"action\": \"click_element\", \"text\": \"搜索\"}\n")
+        append("- click_sequence(texts): [Use this for calculator/dial pad and other consecutive keypads] Click a group of elements in order with ONE decision. Example: {\"action\": \"click_sequence\", \"texts\": [\"1\",\"0\",\"0\",\"0\",\"÷\",\"9\",\"9\",\"=\"]}\n")
         append("- wait(duration): Wait for page loading. Duration in seconds (1-10). Example: {\"action\": \"wait\", \"duration\": 3}\n")
         append("- take_over(message): Request user to manually complete login/captcha/verification. Example: {\"action\": \"take_over\", \"message\": \"请完成登录验证\"}\n")
         append("- answer(text): Answer user's question. Example: {\"action\": \"answer\", \"text\": \"The answer is...\"}\n")
@@ -162,6 +164,8 @@ Text Related:
         // 从 action 生成描述
         val description = when (action?.type) {
             "click" -> "点击坐标 (${action.x}, ${action.y})"
+            "click_element" -> "点击元素 \"${action.text}\"（通道A）"
+            "click_sequence" -> "连续点击 ${action.texts?.size ?: 0} 个元素: ${action.texts?.joinToString("")}"
             "long_press" -> "长按坐标 (${action.x}, ${action.y})"
             "double_tap" -> "双击坐标 (${action.x}, ${action.y})"
             "swipe" -> {
