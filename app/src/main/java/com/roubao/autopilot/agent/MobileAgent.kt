@@ -149,9 +149,13 @@ class MobileAgent(
             stop()
         }
 
-            // S1 感知通道 A：A11y 未启用时经 Shizuku 自启用（失败不阻塞，自动降级截图通道）
-            if (!A11yPerception.isAvailable) {            log("[A11y] 感知服务未启用，尝试经 Shizuku 自启用...")
-            val a11yOk = controller.enableA11yService()
+        // S1 感知通道 A：A11y 未启用时经 Shizuku 自启用（失败不阻塞，自动降级截图通道）
+        // 注意：内部有最长 40s 的轮询等待，必须在 IO 线程执行——否则堵死主线程，
+        // OverlayService 来不及 startForeground() 会被系统以
+        // ForegroundServiceDidNotStartInTimeException 杀掉进程（已实测踩过）
+        if (!A11yPerception.isAvailable) {
+            log("[A11y] 感知服务未启用，尝试经 Shizuku 自启用...")
+            val a11yOk = withContext(Dispatchers.IO) { controller.enableA11yService() }
             log(if (a11yOk) "[A11y] 感知服务已启用 ✓" else "[A11y] 自启用失败，本次任务走截图通道")
         }
 
@@ -223,7 +227,7 @@ class MobileAgent(
                     ActionMemory.keyFor(instruction, curPkg, curLabels) else ""
                 if (memKey.isNotEmpty() && memKey != lastMemKey && A11yPerception.isAvailable) {
                     val cached = ActionMemory.lookup(memKey)
-                    if (cached != null && ActionMemory.replay(cached)) {
+                    if (cached != null && withContext(Dispatchers.IO) { ActionMemory.replay(cached) }) {
                         log("[L2] 记忆重放成功，跳过本步 VLM 决策（0 token，毫秒级）")
                         infoPool.actionHistory.add(Action(type = "click_element"))
                         infoPool.summaryHistory.add("L2 记忆重放")

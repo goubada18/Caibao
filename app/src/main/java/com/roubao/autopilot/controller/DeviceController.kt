@@ -86,8 +86,20 @@ class DeviceController(private val context: Context? = null) {
             if (A11yPerception.isAvailable) return true
             Thread.sleep(500)
         }
-        println("[DeviceController] A11y 服务 20s 内未绑定")
-        return A11yPerception.isAvailable
+        // 兜底：P0-2 实测的「关→开」切换 —— 能清掉 HyperOS 的粘性崩溃状态
+        println("[DeviceController] 追加后仍未绑定，尝试 关→开 切换恢复")
+        val without = cur.split(":").filter {
+            it.isNotBlank() && !it.contains("CaibaoA11yService")
+        }
+        exec("settings put secure enabled_accessibility_services \"${without.joinToString(":")}\"")
+        Thread.sleep(2000)
+        exec("settings put secure enabled_accessibility_services \"${without.plus(comp).joinToString(":")}\"")
+        repeat(40) {
+            if (A11yPerception.isAvailable) return true
+            Thread.sleep(500)
+        }
+        println("[DeviceController] A11y 服务仍未绑定，本次任务走截图通道")
+        return false
     }
 
     /**
