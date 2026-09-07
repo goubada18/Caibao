@@ -3,8 +3,11 @@ package com.roubao.autopilot.vlm
 import android.graphics.Bitmap
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 import okhttp3.ConnectionPool
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -39,6 +42,21 @@ class VLMClient(
     companion object {
         private const val MAX_RETRIES = 3
         private const val RETRY_DELAY_MS = 1000L
+
+        /**
+         * 可取消的同步 HTTP 调用：协程被取消（用户点停止）时立即掐断在途请求，
+         * 而不是傻等 readTimeout（最长 90s）。这是「停止按钮要很久才生效」的修复。
+         */
+        private suspend fun cancellableCall(client: OkHttpClient, request: Request): okhttp3.Response {
+            val call = client.newCall(request)
+            val job = coroutineContext[kotlinx.coroutines.Job]
+            val handle = job?.invokeOnCompletion { cause -> if (cause != null) call.cancel() }
+            try {
+                return call.execute()
+            } finally {
+                handle?.dispose()
+            }
+        }
 
         /** 规范化 URL：自动添加 https:// 前缀，移除末尾斜杠 */
         private fun normalizeUrl(url: String): String {
@@ -84,7 +102,7 @@ class VLMClient(
             }
 
             try {
-                client.newCall(request).execute().use { response ->
+                cancellableCall(client, request).use { response ->
                     val responseBody = response.body?.string() ?: ""
 
                     if (response.isSuccessful) {
@@ -124,6 +142,7 @@ class VLMClient(
         val encodedImages = images.map { bitmapToBase64Url(it) }
 
         for (attempt in 1..MAX_RETRIES) {
+            coroutineContext.ensureActive()  // 用户已停止则立即退出重试
             try {
                 val content = JSONArray().apply {
                     put(JSONObject().apply {
@@ -167,7 +186,7 @@ class VLMClient(
                     .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
                     .build()
 
-                val response = client.newCall(request).execute()
+                val response = cancellableCall(client, request)
                 val responseBody = response.body?.string() ?: ""
 
                 if (response.isSuccessful) {
@@ -223,6 +242,7 @@ class VLMClient(
         var lastException: Exception? = null
 
         for (attempt in 1..MAX_RETRIES) {
+            coroutineContext.ensureActive()  // 用户已停止则立即退出重试
             try {
                 val requestBody = JSONObject().apply {
                     put("model", model)
@@ -242,7 +262,7 @@ class VLMClient(
                     .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
                     .build()
 
-                val response = client.newCall(request).execute()
+                val response = cancellableCall(client, request)
                 val responseBody = response.body?.string() ?: ""
 
                 if (response.isSuccessful) {
