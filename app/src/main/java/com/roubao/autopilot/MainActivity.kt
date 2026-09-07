@@ -45,7 +45,7 @@ import android.util.Log
 private const val TAG = "MainActivity"
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector, val selectedIcon: ImageVector) {
-    object Home : Screen("home", "肉包", Icons.Outlined.Home, Icons.Filled.Home)
+    object Home : Screen("home", "菜包", Icons.Outlined.Home, Icons.Filled.Home)
     object Capabilities : Screen("capabilities", "能力", Icons.Outlined.Star, Icons.Filled.Star)
     object History : Screen("history", "记录", Icons.Outlined.List, Icons.Filled.List)
     object Settings : Screen("settings", "设置", Icons.Outlined.Settings, Icons.Filled.Settings)

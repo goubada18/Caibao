@@ -12,6 +12,14 @@ android {
     buildToolsVersion = "36.0.0"
 
     defaultConfig {
+        // 智谱 API Key 从 local.properties 读取（zhipuApiKey=...），该文件不入 git
+        val localProps = java.util.Properties().apply {
+            val f = rootProject.file("local.properties")
+            if (f.exists()) f.inputStream().use { load(it) }
+        }
+        buildConfigField("String", "ZHIPU_API_KEY",
+            "\"${localProps.getProperty("zhipuApiKey") ?: ""}\"")
+
         applicationId = "com.roubao.autopilot"
         minSdk = 26
         targetSdk = 34

@@ -158,7 +158,7 @@ class OverlayService : Service() {
 
     private fun startForegroundNotification() {
         val channelId = "baozi_overlay"
-        val channelName = "肉包状态"
+        val channelName = "菜包状态"
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -167,7 +167,7 @@ class OverlayService : Service() {
                     channelName,
                     NotificationManager.IMPORTANCE_LOW
                 ).apply {
-                    description = "显示肉包执行状态"
+                    description = "显示菜包执行状态"
                     setShowBadge(false)
                 }
                 val notificationManager = getSystemService(NotificationManager::class.java)
@@ -182,7 +182,7 @@ class OverlayService : Service() {
             )
 
             val notification = NotificationCompat.Builder(this, channelId)
-                .setContentTitle("肉包运行中")
+                .setContentTitle("菜包运行中")
                 .setContentText("正在执行自动化任务...")
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentIntent(pendingIntent)
@@ -196,7 +196,7 @@ class OverlayService : Service() {
             // 降级：使用最简单的通知确保 startForeground 被调用
             try {
                 val fallbackNotification = NotificationCompat.Builder(this, channelId)
-                    .setContentTitle("肉包")
+                    .setContentTitle("菜包")
                     .setSmallIcon(R.mipmap.ic_launcher)
                     .build()
                 startForeground(1001, fallbackNotification)
@@ -238,7 +238,7 @@ class OverlayService : Service() {
 
         // 状态文字
         textView = TextView(this).apply {
-            text = "肉包"
+            text = "菜包"
             textSize = 13f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER

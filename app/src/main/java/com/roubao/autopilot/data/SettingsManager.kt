@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.roubao.autopilot.BuildConfig
 import com.roubao.autopilot.ui.theme.ThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -50,6 +51,12 @@ data class ApiProvider(
             baseUrl = "https://openrouter.ai/api/v1",
             defaultModel = "anthropic/claude-3.5-sonnet"
         )
+        val ZHIPU = ApiProvider(
+            id = "zhipu",
+            name = "智谱 (GLM-4.1V)",
+            baseUrl = "https://open.bigmodel.cn/api/paas/v4",
+            defaultModel = "glm-4.1v-thinking-flash"
+        )
         val CUSTOM = ApiProvider(
             id = "custom",
             name = "自定义",
@@ -57,7 +64,7 @@ data class ApiProvider(
             defaultModel = ""
         )
 
-        val ALL = listOf(GUI_OWL, MAI_UI, ALIYUN, OPENAI, OPENROUTER, CUSTOM)
+        val ALL = listOf(GUI_OWL, MAI_UI, ZHIPU, ALIYUN, OPENAI, OPENROUTER, CUSTOM)
     }
 }
 
@@ -80,7 +87,7 @@ const val DEFAULT_MODEL = "qwen3-vl-plus"
  * 应用设置
  */
 data class AppSettings(
-    val currentProviderId: String = ApiProvider.ALIYUN.id,  // 当前选中的服务商
+    val currentProviderId: String = ApiProvider.ZHIPU.id,  // 当前选中的服务商（菜包默认智谱）
     val providerConfigs: Map<String, ProviderConfig> = emptyMap(),  // 每个服务商的配置
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val hasSeenOnboarding: Boolean = false,
@@ -94,7 +101,7 @@ data class AppSettings(
         get() = providerConfigs[currentProviderId] ?: ProviderConfig()
 
     val currentProvider: ApiProvider
-        get() = ApiProvider.ALL.find { it.id == currentProviderId } ?: ApiProvider.ALIYUN
+        get() = ApiProvider.ALL.find { it.id == currentProviderId } ?: ApiProvider.ZHIPU
 
     val apiKey: String get() = currentConfig.apiKey
     val model: String get() = currentConfig.model.ifEmpty { currentProvider.defaultModel }
@@ -233,8 +240,12 @@ class SettingsManager(context: Context) {
      */
     private fun loadProviderConfig(providerId: String): ProviderConfig {
         val prefix = "provider_${providerId}_"
+        // 智谱：未手动设置 key 时回落到编译期内置值（来自 local.properties，不入 git）
+        val storedKey = securePrefs.getString("${prefix}api_key", "") ?: ""
+        val defaultKey = if (providerId == "zhipu" && storedKey.isBlank())
+            BuildConfig.ZHIPU_API_KEY else storedKey
         return ProviderConfig(
-            apiKey = securePrefs.getString("${prefix}api_key", "") ?: "",
+            apiKey = defaultKey,
             model = prefs.getString("${prefix}model", "") ?: "",
             cachedModels = prefs.getStringSet("${prefix}cached_models", emptySet())?.toList() ?: emptyList(),
             customBaseUrl = prefs.getString("${prefix}custom_base_url", "") ?: ""
