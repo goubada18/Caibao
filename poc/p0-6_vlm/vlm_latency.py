@@ -20,7 +20,9 @@ import os
 from PIL import Image
 
 URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-MODEL = "glm-4.1v-thinking-flash"
+# 用户订阅的是 FlashX；但实测同任务 Flash 更快更稳（p50 6.2s/3全对 vs FlashX 9.1s/2对），
+# 详见 POC 报告第 11 章。L4 选型建议 Flash。
+MODEL = "glm-4.1v-thinking-flashx"
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 KEY = open(os.path.join(HERE, "zhipu_key.txt")).read().strip()

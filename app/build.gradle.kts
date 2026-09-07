@@ -8,6 +8,8 @@ plugins {
 android {
     namespace = "com.roubao.autopilot"
     compileSdk = 34
+    // 本机 build-tools 34.0.0 是残缺安装（缺 aapt.exe），改用完整的 36.0.0
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = "com.roubao.autopilot"
