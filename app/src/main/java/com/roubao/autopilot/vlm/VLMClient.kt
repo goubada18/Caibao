@@ -169,7 +169,7 @@ class VLMClient(
                 val requestBody = JSONObject().apply {
                     put("model", model)
                     put("messages", messages)
-                    put("max_tokens", 4096)
+                    put("max_tokens", 2048)
                     put("temperature", 0.0)
                     put("top_p", 0.85)
                     put("frequency_penalty", 0.2)  // 减少重复输出
@@ -247,7 +247,7 @@ class VLMClient(
                 val requestBody = JSONObject().apply {
                     put("model", model)
                     put("messages", messagesJson)
-                    put("max_tokens", 4096)
+                    put("max_tokens", 2048)
                     put("temperature", 0.0)
                 }
 

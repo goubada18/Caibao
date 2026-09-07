@@ -26,6 +26,8 @@ data class InfoPool(
     var lastAction: Action? = null,
     var lastActionThought: String = "",
     var lastSummary: String = "",
+    /** 上一步是否由通道 A（无障碍 performAction）确认执行成功——用于跳过反思 VLM 调用 */
+    var lastActionChannelA: Boolean = false,
 
     // 笔记
     var importantNotes: String = "",

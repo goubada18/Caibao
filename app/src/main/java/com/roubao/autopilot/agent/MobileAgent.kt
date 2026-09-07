@@ -325,11 +325,27 @@ class MobileAgent(
                 }
 
                 val responseText = actionResponse.getOrThrow()
-                val executorResult = executor.parseResponse(responseText)
+                var executorResult = executor.parseResponse(responseText)
 
                 // 将助手响应添加到记忆
                 memory?.addAssistantMessage(responseText)
-                val action = executorResult.action
+                var action = executorResult.action
+
+                // 空响应/格式漂移：立即重试一次（实测有等 65s 拿回空串的情况）
+                if (action == null) {
+                    log("动作解析失败 -> 立即重试一次（显式要求只输出 JSON）")
+                    val retryPrompt = actionPrompt +
+                            "\n\nIMPORTANT: Reply with ONE JSON action object only, no extra text. " +
+                            "Example: {\"action\":\"click_element\",\"text\":\"搜索\"}"
+                    val retryResp = vlmClient.predict(retryPrompt, listOf(screenshot))
+                    if (retryResp.isSuccess) {
+                        val retryText = retryResp.getOrThrow()
+                        memory?.addAssistantMessage(retryText)
+                        executorResult = executor.parseResponse(retryText)
+                        action = executorResult.action
+                        log("重试解析: ${if (action != null) "成功 ✓" else "仍失败"}")
+                    }
+                }
 
                 log("思考: ${executorResult.thought.take(80)}...")
                 log("动作: ${executorResult.actionStr}")
@@ -430,32 +446,43 @@ class MobileAgent(
                 }
 
                 // 9. Reflector 反思
-                log("Reflector 反思中...")
-
-                // 检查停止状态
-                if (!_state.value.isRunning) {
-                    log("用户停止执行")
-                    OverlayService.hide(context)
-                    bringAppToFront()
-                    return AgentResult(success = false, message = "用户停止")
-                }
-
-                val reflectPrompt = reflector.getPrompt(infoPool)
-                val reflectResponse = vlmClient.predict(reflectPrompt, listOf(screenshot, afterScreenshot))
-
-                val reflectResult = if (reflectResponse.isSuccess) {
-                    reflector.parseResponse(reflectResponse.getOrThrow())
+                //    优化：通道 A（无障碍 performAction）已确认执行成功时跳过反思 VLM 调用，
+                //    实测每次反思是一次完整的模型往返（~10s），而通道 A 的成功本身就是信号。
+                val reflectResult: ReflectorResult = if (infoPool.lastActionChannelA) {
+                    log("[优化] 通道A 动作已确认执行，跳过反思 VLM 调用")
+                    infoPool.lastActionChannelA = false
+                    infoPool.actionHistory.add(action)
+                    infoPool.summaryHistory.add(executorResult.description)
+                    infoPool.actionOutcomes.add("A")
+                    infoPool.errorDescriptions.add("")
+                    ReflectorResult("A", "")
                 } else {
-                    ReflectorResult("C", "Failed to call reflector")
+                    log("Reflector 反思中...")
+
+                    // 检查停止状态
+                    if (!_state.value.isRunning) {
+                        log("用户停止执行")
+                        OverlayService.hide(context)
+                        bringAppToFront()
+                        return AgentResult(success = false, message = "用户停止")
+                    }
+
+                    val reflectPrompt = reflector.getPrompt(infoPool)
+                    val reflectResponse = vlmClient.predict(reflectPrompt, listOf(screenshot, afterScreenshot))
+                    val parsed = if (reflectResponse.isSuccess) {
+                        reflector.parseResponse(reflectResponse.getOrThrow())
+                    } else {
+                        ReflectorResult("C", "Failed to call reflector")
+                    }
+                    log("结果: ${parsed.outcome} - ${parsed.errorDescription.take(50)}")
+
+                    // 更新历史
+                    infoPool.actionHistory.add(action)
+                    infoPool.summaryHistory.add(executorResult.description)
+                    infoPool.actionOutcomes.add(parsed.outcome)
+                    infoPool.errorDescriptions.add(parsed.errorDescription)
+                    parsed
                 }
-
-                log("结果: ${reflectResult.outcome} - ${reflectResult.errorDescription.take(50)}")
-
-                // 更新历史
-                infoPool.actionHistory.add(action)
-                infoPool.summaryHistory.add(executorResult.description)
-                infoPool.actionOutcomes.add(reflectResult.outcome)
-                infoPool.errorDescriptions.add(reflectResult.errorDescription)
                 infoPool.progressStatus = infoPool.completedPlan
 
                 // 更新执行步骤的 outcome（之前添加的步骤 outcome 是 "?"）
@@ -993,6 +1020,7 @@ class MobileAgent(
                     log("⚠️ click_element 缺少 text")
                 } else if (A11yPerception.isAvailable && A11yPerception.clickByText(target)) {
                     log("[通道A] click_element \"$target\" ✓")
+                    infoPool.lastActionChannelA = true
                 } else {
                     log("[通道A] click_element \"$target\" 未命中树，降级失败——本轮由反思观察")
                 }
@@ -1019,6 +1047,7 @@ class MobileAgent(
                             break
                         }
                     }
+                    infoPool.lastActionChannelA = okCount > 0 && okCount == seq.size
                 }
             }
             "double_tap" -> {

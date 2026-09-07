@@ -122,6 +122,8 @@ object A11yPerception {
             }
             sb.append(line).append('\n')
         }
+        sb.append("TIP: to press multiple keys in a row (calculator/dialer), finish them ALL in one go with ")
+        sb.append("\"action\":\"click_sequence\",\"texts\":[...]\" — much faster than one click per step.")
         return sb.toString()
     }
 
