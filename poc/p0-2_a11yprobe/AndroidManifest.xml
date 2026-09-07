@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.caibao.a11yprobe">
+
+    <application
+        android:label="A11yProbe"
+        android:allowBackup="false"
+        android:debuggable="true">
+
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- exported=true：系统需要绑定；有 BIND_ACCESSIBILITY_SERVICE 权限门槛，第三方无法滥用 -->
+        <service
+            android:name=".ProbeService"
+            android:exported="true"
+            android:label="A11yProbe 存活探针"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/probe_config" />
+        </service>
+    </application>
+</manifest>
