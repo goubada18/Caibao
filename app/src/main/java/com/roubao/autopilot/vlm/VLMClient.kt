@@ -44,6 +44,76 @@ class VLMClient(
         private const val RETRY_DELAY_MS = 1000L
 
         /**
+         * 流式读取 + JSON 早停：模型吐出完整动作 JSON 的瞬间就收工，
+         * 不再等它把剩余的思考/客套话写完（实测省掉数秒到十几秒）。
+         * 服务端未走 SSE 时自动退回一次性解析。
+         */
+        private suspend fun readStreamedContent(response: okhttp3.Response): String {
+            val isStream = response.header("Content-Type")?.contains("event-stream") == true
+            response.use { r ->
+                if (!r.isSuccessful) return ""
+                if (!isStream) {
+                    val body = r.body?.string() ?: return ""
+                    return JSONObject(body).optJSONArray("choices")
+                        ?.optJSONObject(0)?.optJSONObject("message")
+                        ?.optString("content") ?: ""
+                }
+                val source = r.body?.source() ?: return ""
+                val sb = StringBuilder()
+                try {
+                    while (!source.exhausted()) {
+                        coroutineContext.ensureActive()
+                        val line = source.readUtf8Line() ?: break
+                        if (!line.startsWith("data:")) continue
+                        val data = line.removePrefix("data:").trim()
+                        if (data == "[DONE]") break
+                        val delta = JSONObject(data).optJSONArray("choices")
+                            ?.optJSONObject(0)?.optJSONObject("delta")
+                            ?.optString("content")
+                        if (!delta.isNullOrEmpty()) {
+                            sb.append(delta)
+                            if (hasCompleteActionJson(sb)) {
+                                println("[VLMClient] 流式早停：已收到完整动作 JSON")
+                                break
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    // 取消/中断：已收到的内容若含完整 JSON 仍可用
+                }
+                return sb.toString()
+            }
+        }
+
+        /**
+         * 判断累积文本里是否已出现「括号闭合且含 action 字段」的 JSON 对象
+         */
+        private fun hasCompleteActionJson(sb: StringBuilder): Boolean {
+            val s = sb.toString()
+            val start = s.indexOf('{')
+            if (start < 0) return false
+            var depth = 0
+            var inStr = false
+            var esc = false
+            for (i in start until s.length) {
+                val c = s[i]
+                if (esc) { esc = false; continue }
+                when {
+                    c == '\\' && inStr -> esc = true
+                    c == '"' -> inStr = !inStr
+                    !inStr && c == '{' -> depth++
+                    !inStr && c == '}' -> {
+                        depth--
+                        if (depth == 0) {
+                            return s.substring(start, i + 1).contains("\"action\"")
+                        }
+                    }
+                }
+            }
+            return false
+        }
+
+        /**
          * 可取消的同步 HTTP 调用：协程被取消（用户点停止）时立即掐断在途请求，
          * 而不是傻等 readTimeout（最长 90s）。这是「停止按钮要很久才生效」的修复。
          */
@@ -170,6 +240,7 @@ class VLMClient(
                     put("model", model)
                     put("messages", messages)
                     put("max_tokens", 2048)
+                    put("stream", true)
                     put("temperature", 0.0)
                     put("top_p", 0.85)
                     put("frequency_penalty", 0.2)  // 减少重复输出
@@ -187,20 +258,15 @@ class VLMClient(
                     .build()
 
                 val response = cancellableCall(client, request)
-                val responseBody = response.body?.string() ?: ""
+                val responseContent = readStreamedContent(response)
 
                 if (response.isSuccessful) {
-                    val json = JSONObject(responseBody)
-                    val choices = json.getJSONArray("choices")
-                    if (choices.length() > 0) {
-                        val message = choices.getJSONObject(0).getJSONObject("message")
-                        val responseContent = message.getString("content")
+                    if (responseContent.isNotBlank()) {
                         return@withContext Result.success(responseContent)
-                    } else {
-                        lastException = Exception("No response from model")
                     }
+                    lastException = Exception("No response from model")
                 } else {
-                    lastException = Exception("API error: ${response.code} - $responseBody")
+                    lastException = Exception("API error: ${response.code}")
                 }
             } catch (e: UnknownHostException) {
                 // DNS 解析失败，重试
@@ -248,6 +314,7 @@ class VLMClient(
                     put("model", model)
                     put("messages", messagesJson)
                     put("max_tokens", 2048)
+                    put("stream", true)
                     put("temperature", 0.0)
                 }
 
@@ -263,20 +330,15 @@ class VLMClient(
                     .build()
 
                 val response = cancellableCall(client, request)
-                val responseBody = response.body?.string() ?: ""
+                val responseContent = readStreamedContent(response)
 
                 if (response.isSuccessful) {
-                    val json = JSONObject(responseBody)
-                    val choices = json.getJSONArray("choices")
-                    if (choices.length() > 0) {
-                        val message = choices.getJSONObject(0).getJSONObject("message")
-                        val responseContent = message.getString("content")
+                    if (responseContent.isNotBlank()) {
                         return@withContext Result.success(responseContent)
-                    } else {
-                        lastException = Exception("No response from model")
                     }
+                    lastException = Exception("No response from model")
                 } else {
-                    lastException = Exception("API error: ${response.code} - $responseBody")
+                    lastException = Exception("API error: ${response.code}")
                 }
             } catch (e: UnknownHostException) {
                 println("[VLMClient] DNS 解析失败，重试 $attempt/$MAX_RETRIES...")

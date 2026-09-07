@@ -128,6 +128,16 @@ object A11yPerception {
     }
 
     /**
+     * 当前界面签名所需的 (包名, 可点击元素标签)，供 L2 记忆做键
+     */
+    fun currentLabels(): Pair<String, List<String>> {
+        val snap = snapshot() ?: return "" to emptyList()
+        return snap.windowPkg to snap.elements.map {
+            it.text.ifEmpty { it.desc }.ifEmpty { it.viewId }.ifEmpty { it.className }
+        }
+    }
+
+    /**
      * 按文本/描述/id 找可点击元素（L2 确定性匹配的雏形）。
      */
     fun findByText(query: String): Element? {

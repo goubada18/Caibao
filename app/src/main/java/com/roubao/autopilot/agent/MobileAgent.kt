@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import com.roubao.autopilot.App
 import com.roubao.autopilot.controller.A11yPerception
+import com.roubao.autopilot.controller.ActionMemory
 import com.roubao.autopilot.controller.AppScanner
 import com.roubao.autopilot.controller.DeviceController
 import com.roubao.autopilot.data.ExecutionStep
@@ -148,9 +149,8 @@ class MobileAgent(
             stop()
         }
 
-        // S1 感知通道 A：A11y 未启用时经 Shizuku 自启用（失败不阻塞，自动降级截图通道）
-        if (!A11yPerception.isAvailable) {
-            log("[A11y] 感知服务未启用，尝试经 Shizuku 自启用...")
+            // S1 感知通道 A：A11y 未启用时经 Shizuku 自启用（失败不阻塞，自动降级截图通道）
+            if (!A11yPerception.isAvailable) {            log("[A11y] 感知服务未启用，尝试经 Shizuku 自启用...")
             val a11yOk = controller.enableA11yService()
             log(if (a11yOk) "[A11y] 感知服务已启用 ✓" else "[A11y] 自启用失败，本次任务走截图通道")
         }
@@ -158,6 +158,13 @@ class MobileAgent(
         updateState { copy(isRunning = true, currentStep = 0, instruction = instruction) }
 
         try {
+            ActionMemory.init(context.filesDir)
+
+            // L2 记忆：本次任务学到的 (指令+界面) -> 动作，任务成功时落盘
+            val learned = LinkedHashMap<String, ActionMemory.Action>()
+            var lastMemKey = ""
+            var lastMemKeyCandidate = ""
+
             for (step in 0 until maxSteps) {
                 // 检查协程是否被取消
                 coroutineContext.ensureActive()
@@ -209,6 +216,25 @@ class MobileAgent(
 
                 // 2. 检查错误升级
                 checkErrorEscalation(infoPool)
+
+                // 2.5 L2 记忆重放：同指令+同界面命中缓存时，直接执行，一次 VLM 都不调
+                val (curPkg, curLabels) = A11yPerception.currentLabels()
+                val memKey = if (curPkg.isNotEmpty())
+                    ActionMemory.keyFor(instruction, curPkg, curLabels) else ""
+                if (memKey.isNotEmpty() && memKey != lastMemKey && A11yPerception.isAvailable) {
+                    val cached = ActionMemory.lookup(memKey)
+                    if (cached != null && ActionMemory.replay(cached)) {
+                        log("[L2] 记忆重放成功，跳过本步 VLM 决策（0 token，毫秒级）")
+                        infoPool.actionHistory.add(Action(type = "click_element"))
+                        infoPool.summaryHistory.add("L2 记忆重放")
+                        infoPool.actionOutcomes.add("A")
+                        infoPool.errorDescriptions.add("")
+                        lastMemKey = memKey
+                        continue
+                    }
+                }
+                lastMemKeyCandidate = memKey
+                lastMemKey = memKey
 
                 // 3. 跳过 Manager 的情况
                 val skipManager = !infoPool.errorFlagPlan &&
@@ -366,6 +392,8 @@ class MobileAgent(
                 // 特殊处理: answer 动作
                 if (action.type == "answer") {
                     log("回答: ${action.text}")
+                    // 任务成功 → 落盘本次学到的动作
+                    learned.forEach { (k, v) -> ActionMemory.remember(k, listOf(v)) }
                     OverlayService.update("${action.text?.take(20)}...")
                     delay(1500)
                     OverlayService.hide(context)
@@ -378,6 +406,7 @@ class MobileAgent(
                 if (action.type == "terminate") {
                     val success = action.status == "success"
                     log("任务${if (success) "完成" else "失败"}")
+                    if (success) learned.forEach { (k, v) -> ActionMemory.remember(k, listOf(v)) }
                     OverlayService.update(if (success) "完成!" else "失败")
                     delay(1500)
                     OverlayService.hide(context)
@@ -410,6 +439,16 @@ class MobileAgent(
                 log("执行动作: ${action.type}")
                 OverlayService.update("${action.type}: ${executorResult.description.take(15)}...")
                 executeAction(action, infoPool)
+
+                // 记录本步学到的动作（任务成功时才落盘，避免把错误动作记进去）
+                if (infoPool.lastActionChannelA && lastMemKeyCandidate.isNotEmpty()) {
+                    when (action.type) {
+                        "click_element" -> learned[lastMemKeyCandidate] =
+                            ActionMemory.Action("click_element", text = action.text ?: "")
+                        "click_sequence" -> learned[lastMemKeyCandidate] =
+                            ActionMemory.Action("click_sequence", texts = action.texts ?: emptyList())
+                    }
+                }
                 infoPool.lastAction = action
 
                 // 立即记录执行步骤（outcome 暂时为 "?" 表示进行中）
