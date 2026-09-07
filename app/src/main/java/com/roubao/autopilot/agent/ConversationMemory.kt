@@ -37,15 +37,34 @@ class ConversationMemory {
      * 添加用户消息（带截图）
      */
     fun addUserMessage(text: String, image: Bitmap? = null) {
-        val imageBase64 = image?.let { bitmapToBase64(it) }
-        messages.add(Message(role = "user", textContent = text, imageBase64 = imageBase64))
+        messages.add(Message(role = "user", textContent = text, imageBase64 = image?.let { bitmapToBase64(it) }))
+        trimHistory()
     }
 
     /**
-     * 添加助手消息
+     * 添加助手消息（截断过长的思考文本，保留结尾的 JSON 动作）
      */
     fun addAssistantMessage(text: String) {
-        messages.add(Message(role = "assistant", textContent = text))
+        val trimmed = if (text.length > 800)
+            text.take(200) + "\n...(思考过程省略)...\n" + text.takeLast(400)
+        else text
+        messages.add(Message(role = "assistant", textContent = trimmed))
+    }
+
+    /**
+     * 历史裁剪：非系统消息超过上限时丢弃最老的轮次。
+     * 实测全量历史会让 GLM 决策从 ~20s 膨胀到 50s+（输入 token 线性增长，
+     * 且旧推理文本被反复重放导致思考变长）。任务与计划每步都在 prompt 里重建，
+     * 丢旧轮次是安全的。
+     */
+    private fun trimHistory() {
+        val nonSystem = messages.filter { it.role != "system" }
+        if (nonSystem.size <= MAX_NON_SYSTEM_MESSAGES) return
+        val systemMsgs = messages.filter { it.role == "system" }
+        val keep = nonSystem.takeLast(MAX_NON_SYSTEM_MESSAGES)
+        messages.clear()
+        messages.addAll(systemMsgs + keep)
+        println("[ConversationMemory] 历史裁剪: 保留最近 ${keep.size} 条消息")
     }
 
     /**
@@ -151,6 +170,9 @@ class ConversationMemory {
     }
 
     companion object {
+        /** 非系统消息上限（约 4 轮 user+assistant）——超过即裁剪最老轮次 */
+        private const val MAX_NON_SYSTEM_MESSAGES = 8
+
         /**
          * 创建带系统提示的记忆
          */
